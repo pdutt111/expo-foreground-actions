@@ -11,7 +11,26 @@ import {
   ForegroundApi, Settings
 } from "./ExpoForegroundActions.types";
 import ExpoForegroundActionsModule from "./ExpoForegroundActionsModule";
-import { AppRegistry, AppState } from "react-native";
+import { AppRegistry, AppState, NativeModules } from "react-native";
+
+// Add a debug logger function
+const DEBUG_TAG = "ExpoForegroundActions";
+const debug = (message: string, ...args: any[]) => {
+  const logMessage = `[${DEBUG_TAG}] ${message}`;
+  console.log(logMessage, ...args);
+  
+  // For Android, also log to native so it appears in logcat
+  if (Platform.OS === 'android' && NativeModules.ExpoForegroundActions) {
+    try {
+      const fullMessage = args.length > 0 
+        ? `${logMessage} ${args.map(arg => JSON.stringify(arg)).join(' ')}` 
+        : logMessage;
+      NativeModules.ExpoForegroundActions.debugLog(fullMessage);
+    } catch (e) {
+      console.warn("Failed to log to native:", e);
+    }
+  }
+};
 
 const emitter = new EventEmitter(
   ExpoForegroundActionsModule ?? NativeModulesProxy.ExpoForegroundActions
@@ -29,13 +48,27 @@ export class NotForegroundedError extends Error {
 }
 
 const startForegroundAction = async (options?: AndroidSettings): Promise<number> => {
+  debug("Starting foreground action", options);
+  
   if (Platform.OS === "android" && !options) {
+    debug("Error: Missing options for Android");
     throw new Error("Foreground action options cannot be null on android");
   }
-  if (Platform.OS === "android") {
-    return ExpoForegroundActionsModule.startForegroundAction(options);
-  } else {
-    return ExpoForegroundActionsModule.startForegroundAction();
+  
+  try {
+    let result: number;
+    if (Platform.OS === "android") {
+      debug("Calling native startForegroundAction for Android");
+      result = await ExpoForegroundActionsModule.startForegroundAction(options);
+    } else {
+      debug("Calling native startForegroundAction for iOS");
+      result = await ExpoForegroundActionsModule.startForegroundAction();
+    }
+    debug(`Foreground action started with ID: ${result}`);
+    return result;
+  } catch (error) {
+    debug(`Failed to start foreground action: ${error.message}`, error);
+    throw error;
   }
 };
 
@@ -58,15 +91,30 @@ export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise
 
   const initOptions = { ...androidSettings, headlessTaskName };
   const action = async (identifier: number) => {
+    debug(`Action called with identifier: ${identifier}`);
+    debug(`Current AppState: ${AppState.currentState}`);
+    
     if (AppState.currentState === "background") {
+      debug("Error: App is in background state, cannot run foreground action");
       throw new NotForegroundedError("Foreground actions can only be run in the foreground");
     }
-    await act({
-      headlessTaskName,
-      identifier
-    });
+    
+    debug(`Executing action with headlessTaskName: ${headlessTaskName}`);
+    try {
+      await act({
+        headlessTaskName,
+        identifier
+      });
+      debug(`Action completed successfully for identifier: ${identifier}`);
+    } catch (error) {
+      debug(`Action failed with error: ${error.message}`, error);
+      throw error;
+    }
   };
+  
+  debug(`Platform check: ${Platform.OS}`);
   if (Platform.OS !== "ios" && Platform.OS !== "android") {
+    debug("Error: Unsupported platform");
     throw new Error("Unsupported platform, currently only ios and android are supported");
   }
 
@@ -114,25 +162,42 @@ const runIos = async (action: (identifier: number) => Promise<void>, settings: S
 };
 
 const runAndroid = async (action: (identifier: number) => Promise<void>, options: AndroidSettings, settings: Settings) => new Promise<void>(async (resolve, reject) => {
+  debug("Running Android foreground action", { options });
+  
   try {
+    debug(`Registering headless task: ${options.headlessTaskName}`);
     /*First we register the headless task so we can run it from the Foreground service*/
     AppRegistry.registerHeadlessTask(options.headlessTaskName, () => async (taskdata: { notificationId: number }) => {
       const { notificationId } = taskdata;
+      debug(`Headless task started with notificationId: ${notificationId}`);
+      
       /*Then we start the actuall foreground action, we all do this in the headless task, without touching UI, we can still update UI be using something like Realm for example*/
       try {
+        debug(`Calling onIdentifier event handler with ID: ${notificationId}`);
         settings?.events?.onIdentifier?.(notificationId);
+        
+        debug(`Executing action with ID: ${notificationId}`);
         await action(notificationId);
+        
+        debug(`Action completed, stopping foreground service with ID: ${notificationId}`);
         await stopForegroundAction(notificationId);
+        debug(`Android foreground action workflow completed successfully`);
         resolve();
       } catch (e) {
+        debug(`Error in headless task: ${e.message}`, e);
         /*We do this to make sure its ALWAYS stopped*/
+        debug(`Ensuring foreground service is stopped after error`);
         await stopForegroundAction(notificationId);
         throw e;
       }
     });
+    
+    debug(`Starting foreground service with options`, options);
     await startForegroundAction(options);
+    debug(`Foreground service start initiated`);
 
   } catch (e) {
+    debug(`Failed to run Android foreground action: ${e.message}`, e);
     reject(e);
     throw e;
   }
@@ -145,7 +210,14 @@ export const updateForegroundedAction = async (id: number, options: AndroidSetti
 
 // noinspection JSUnusedGlobalSymbols
 export const stopForegroundAction = async (id: number): Promise<void> => {
-  await ExpoForegroundActionsModule.stopForegroundAction(id);
+  debug(`Stopping foreground action with ID: ${id}`);
+  try {
+    await ExpoForegroundActionsModule.stopForegroundAction(id);
+    debug(`Successfully stopped foreground action with ID: ${id}`);
+  } catch (error) {
+    debug(`Failed to stop foreground action with ID: ${id}: ${error.message}`, error);
+    throw error;
+  }
 };
 
 // noinspection JSUnusedGlobalSymbols

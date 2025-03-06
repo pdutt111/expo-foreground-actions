@@ -217,6 +217,11 @@ class ExpoForegroundActionsModule : Module() {
             val identifiers = intentMap.keys.toTypedArray()
             promise.resolve(identifiers)
         }
+        
+        // Add a debug log function that can be called from JavaScript
+        Function("debugLog") { message: String ->
+            Log.d(TAG, "JS: $message")
+        }
     }
 
     private val context
