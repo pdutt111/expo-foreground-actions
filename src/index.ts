@@ -32,6 +32,14 @@ const debug = (message: string, ...args: any[]) => {
   }
 };
 
+// Set up global error handling for promises
+// This is a React Native compatible approach for handling unhandled promise rejections
+const originalConsoleError = console.error;
+console.error = function(...args) {
+  debug('Caught error in console.error:', ...args);
+  originalConsoleError.apply(console, args);
+};
+
 const emitter = new EventEmitter(
   ExpoForegroundActionsModule ?? NativeModulesProxy.ExpoForegroundActions
 );
@@ -84,10 +92,12 @@ export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise
   // We're removing the background check to allow the action to run in background
 
   if (Platform.OS === "android" && platformApiLevel && platformApiLevel < 26) {
+    debug(`Android API level < 26, forcing runInJS to true`);
     settings.runInJS = true;
   }
 
   const headlessTaskName = `${androidSettings.headlessTaskName}${ranTaskCount}`;
+  debug(`Generated headless task name: ${headlessTaskName}`);
 
   const initOptions = { ...androidSettings, headlessTaskName };
   const action = async (identifier: number) => {
@@ -97,13 +107,17 @@ export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise
     // Allow action to run in background
     debug(`Executing action with headlessTaskName: ${headlessTaskName}`);
     try {
-      await act({
+      debug(`Calling act function with API parameters`);
+      const api: ForegroundApi = {
         headlessTaskName,
         identifier
-      });
+      };
+      debug(`API object created:`, api);
+      await act(api);
       debug(`Action completed successfully for identifier: ${identifier}`);
     } catch (error) {
       debug(`Action failed with error: ${error.message}`, error);
+      console.error(`[ExpoForegroundActions] Action execution failed:`, error);
       throw error;
     }
   };
@@ -115,34 +129,60 @@ export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise
   }
 
   try {
-
+    debug(`Incrementing ranTaskCount from ${ranTaskCount}`);
     ranTaskCount++;
 
     if (settings.runInJS === true) {
+      debug(`Running in JS mode`);
       await runJS(action, settings);
       return;
     }
     if (Platform.OS === "android") {
+      debug(`Running on Android platform`);
       /*On android we wrap the headless task in a promise so we can "await" the starter*/
-      await runAndroid(action, initOptions, settings);
+      try {
+        await runAndroid(action, initOptions, settings);
+        debug(`runAndroid completed successfully`);
+      } catch (androidError) {
+        debug(`runAndroid failed with error: ${androidError.message}`, androidError);
+        throw androidError;
+      }
       return;
     }
     if (Platform.OS === "ios") {
+      debug(`Running on iOS platform`);
       await runIos(action, settings);
       return;
     }
+    debug(`Unsupported platform: ${Platform.OS}`);
     return;
   } catch (e) {
+    debug(`runForegroundedAction caught error: ${e.message}`, e);
+    console.error(`[ExpoForegroundActions] Error in runForegroundedAction:`, e);
     throw e;
   }
 };
 
 
 const runJS = async (action: (identifier: number) => Promise<void>, settings: Settings) => {
+  debug(`Running in JS mode with current jsIdentifier: ${jsIdentifier}`);
   jsIdentifier++;
-  settings?.events?.onIdentifier?.(jsIdentifier);
-  await action(jsIdentifier);
-  jsIdentifier = 0;
+  debug(`Incremented jsIdentifier to: ${jsIdentifier}`);
+  if (settings?.events?.onIdentifier) {
+    debug(`Calling onIdentifier with jsIdentifier: ${jsIdentifier}`);
+    settings.events.onIdentifier(jsIdentifier);
+  }
+  try {
+    debug(`Executing action with jsIdentifier: ${jsIdentifier}`);
+    await action(jsIdentifier);
+    debug(`Action completed successfully in JS mode`);
+  } catch (error) {
+    debug(`Error executing action in JS mode: ${error.message}`, error);
+    throw error;
+  } finally {
+    debug(`Resetting jsIdentifier to 0`);
+    jsIdentifier = 0;
+  }
 };
 
 const runIos = async (action: (identifier: number) => Promise<void>, settings: Settings) => {
@@ -183,10 +223,23 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
       /*Then we start the actual foreground action, we do this in the headless task, without touching UI*/
       try {
         debug(`Calling onIdentifier event handler with ID: ${notificationId}`);
-        settings?.events?.onIdentifier?.(notificationId);
+        if (settings?.events?.onIdentifier) {
+          debug(`onIdentifier handler exists, calling it now`);
+          settings.events.onIdentifier(notificationId);
+        } else {
+          debug(`No onIdentifier handler found`);
+        }
         
         debug(`Executing action with ID: ${notificationId} (AppState: ${currentAppState})`);
-        await action(notificationId);
+        // Wrap the action call in a try/catch to catch any errors
+        try {
+          await action(notificationId);
+          debug(`Action executed successfully`);
+        } catch (actionError) {
+          debug(`Error executing action: ${actionError.message}`, actionError);
+          // Re-throw to be caught by outer catch
+          throw actionError;
+        }
         
         debug(`Action completed, stopping foreground service with ID: ${notificationId}`);
         await stopForegroundAction(notificationId);
@@ -197,7 +250,7 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
         /*We do this to make sure its ALWAYS stopped*/
         debug(`Ensuring foreground service is stopped after error`);
         await stopForegroundAction(notificationId);
-        throw e;
+        reject(e);
       } finally {
         // Clean up the AppState listener
         // In newer versions of React Native, we would use subscription.remove()
