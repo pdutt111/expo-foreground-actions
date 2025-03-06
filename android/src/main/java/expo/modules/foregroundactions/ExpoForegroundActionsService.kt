@@ -40,16 +40,34 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
                 Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
             }
             val contentIntent: PendingIntent = PendingIntent.getActivity(context, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE);
+            // Log notification icon information
+            Log.d(TAG, "Building notification with icon: $notificationIconInt")
+            
+            // Check if the icon is valid, use app icon as fallback
+            var iconToUse = notificationIconInt
+            if (iconToUse <= 0) {
+                Log.w(TAG, "Invalid notification icon, using application icon as fallback")
+                try {
+                    val appInfo = context.packageManager.getApplicationInfo(context.packageName, 0)
+                    iconToUse = appInfo.icon
+                    Log.d(TAG, "Using app icon as fallback: $iconToUse")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to get app icon, using default android icon")
+                    iconToUse = android.R.drawable.ic_dialog_info
+                }
+            }
+            
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                     .setContentTitle(notificationTitle)
                     .setContentText(notificationDesc)
-                    .setSmallIcon(notificationIconInt)
+                    .setSmallIcon(iconToUse)
                     .setContentIntent(contentIntent)
                     .setOngoing(true)
-                    .setSilent(true)
                     .setProgress(notificationMaxProgress, notificationProgress, notificationIndeterminate)
-                    .setPriority(NotificationCompat.PRIORITY_MIN)
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                     .setColor(notificationColor)
+                    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                    .setCategory(NotificationCompat.CATEGORY_SERVICE)
             return builder.build()
         }
     }
@@ -174,14 +192,17 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
                 val serviceChannel = NotificationChannel(
                     CHANNEL_ID, 
                     "Foreground Service Channel",
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_DEFAULT
                 )
                 
                 // Configure the notification channel
                 serviceChannel.description = "Channel for foreground service notifications"
-                serviceChannel.enableLights(false)
-                serviceChannel.enableVibration(false)
-                serviceChannel.setShowBadge(false)
+                serviceChannel.enableLights(true)
+                serviceChannel.lightColor = Color.BLUE
+                serviceChannel.enableVibration(true)
+                serviceChannel.vibrationPattern = longArrayOf(0, 100, 200, 300)
+                serviceChannel.setShowBadge(true)
+                serviceChannel.lockscreenVisibility = Notification.VISIBILITY_PUBLIC
                 
                 val manager = getSystemService(NotificationManager::class.java)
                 if (manager == null) {

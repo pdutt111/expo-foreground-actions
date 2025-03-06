@@ -1,13 +1,17 @@
 package expo.modules.foregroundactions
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.os.Build
 import android.util.Log
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.toCodedException
@@ -20,6 +24,7 @@ const val ON_EXPIRATION_EVENT = "onExpirationEvent"
 class ExpoForegroundActionsModule : Module() {
     companion object {
         private const val TAG = "ExpoForegroundAction"
+        private const val PERMISSION_REQUEST_CODE = 1001
     }
     
     private val intentMap: MutableMap<Int, Intent> = mutableMapOf()
@@ -41,6 +46,14 @@ class ExpoForegroundActionsModule : Module() {
 
         AsyncFunction("startForegroundAction") { options: ExpoForegroundOptions, promise: Promise ->
             try {
+                // Check notification permission for Android 13+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    if (!hasNotificationPermission()) {
+                        Log.d(TAG, "Notification permission not granted, requesting...")
+                        requestNotificationPermission()
+                    }
+                }
+                
                 val intent = Intent(context, ExpoForegroundActionsService::class.java)
                 intent.putExtra("headlessTaskName", options.headlessTaskName)
                 intent.putExtra("notificationTitle", options.notificationTitle)
@@ -159,4 +172,34 @@ class ExpoForegroundActionsModule : Module() {
         get() = requireNotNull(this.context.applicationContext) {
             "React Application Context is null"
         }
+        
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            return ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        }
+        return true
+    }
+    
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val activity = context.currentActivity
+                if (activity != null) {
+                    ActivityCompat.requestPermissions(
+                        activity,
+                        arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
+                        PERMISSION_REQUEST_CODE
+                    )
+                } else {
+                    Log.e(TAG, "Cannot request notification permission: activity is null")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error requesting notification permission: ${e.message}")
+                e.printStackTrace()
+            }
+        }
+    }
 }
