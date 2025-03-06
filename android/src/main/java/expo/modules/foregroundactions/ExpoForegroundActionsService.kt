@@ -54,45 +54,103 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
 
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val extras: Bundle? = intent?.extras
-        requireNotNull(extras) { "Extras cannot be null" }
+        try {
+            val extras: Bundle? = intent?.extras
+            if (extras == null) {
+                println("ERROR: Extras are null, cannot start foreground service")
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
+            // Safely extract all required values with error handling
+            val notificationTitle = extras.getString("notificationTitle")
+            if (notificationTitle == null) {
+                println("ERROR: notificationTitle is null")
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
-        val notificationTitle: String = extras.getString("notificationTitle")!!;
-        val notificationDesc: String = extras.getString("notificationDesc")!!;
-        val notificationColor: Int = Color.parseColor(extras.getString("notificationColor"))
-        val notificationIconInt: Int = extras.getInt("notificationIconInt");
-        val notificationProgress: Int = extras.getInt("notificationProgress");
-        val notificationMaxProgress: Int = extras.getInt("notificationMaxProgress");
-        val notificationIndeterminate: Boolean = extras.getBoolean("notificationIndeterminate");
-        val notificationId: Int = extras.getInt("notificationId");
-        val linkingURI: String = extras.getString("linkingURI")!!;
+            val notificationDesc = extras.getString("notificationDesc")
+            if (notificationDesc == null) {
+                println("ERROR: notificationDesc is null")
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
+            val notificationColorStr = extras.getString("notificationColor")
+            if (notificationColorStr == null) {
+                println("ERROR: notificationColor is null")
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
-        println("notificationIconInt");
-        println(notificationIconInt);
-        println("On create door dion")
-        println("onStartCommand")
-        createNotificationChannel() // Necessary creating channel for API 26+
-        println("After createNotificationChannel")
+            val notificationColor: Int
+            try {
+                notificationColor = Color.parseColor(notificationColorStr)
+            } catch (e: Exception) {
+                println("ERROR: Failed to parse color: ${e.message}")
+                stopSelf()
+                return START_NOT_STICKY
+            }
 
-        println("buildNotification")
-        val notification: Notification = buildNotification(
-                this,
-                notificationTitle,
-                notificationDesc,
-                notificationColor,
-                notificationIconInt,
-                notificationProgress,
-                notificationMaxProgress,
-                notificationIndeterminate,
-                linkingURI
-        )
-        println("Starting foreground")
+            val notificationIconInt = extras.getInt("notificationIconInt", 0)
+            if (notificationIconInt == 0) {
+                println("WARNING: notificationIconInt is 0, this might cause issues")
+            }
 
-        startForeground(notificationId, notification)
-        println("After foreground")
-        return super.onStartCommand(intent, flags, startId)
+            val notificationProgress = extras.getInt("notificationProgress", 0)
+            val notificationMaxProgress = extras.getInt("notificationMaxProgress", 100)
+            val notificationIndeterminate = extras.getBoolean("notificationIndeterminate", false)
+            val notificationId = extras.getInt("notificationId", 1)
+            
+            val linkingURI = extras.getString("linkingURI") ?: ""
+
+            println("Service starting with notificationId: $notificationId")
+            println("notificationIconInt: $notificationIconInt")
+            
+            // Create notification channel first
+            createNotificationChannel()
+            println("Notification channel created")
+
+            // Build the notification
+            val notification = try {
+                buildNotification(
+                    this,
+                    notificationTitle,
+                    notificationDesc,
+                    notificationColor,
+                    notificationIconInt,
+                    notificationProgress,
+                    notificationMaxProgress,
+                    notificationIndeterminate,
+                    linkingURI
+                )
+            } catch (e: Exception) {
+                println("ERROR: Failed to build notification: ${e.message}")
+                e.printStackTrace()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            
+            println("Starting foreground service with ID: $notificationId")
+            
+            try {
+                startForeground(notificationId, notification)
+                println("Foreground service started successfully")
+            } catch (e: Exception) {
+                println("ERROR: Failed to start foreground service: ${e.message}")
+                e.printStackTrace()
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            
+            return START_STICKY
+        } catch (e: Exception) {
+            println("FATAL ERROR in onStartCommand: ${e.message}")
+            e.printStackTrace()
+            stopSelf()
+            return START_NOT_STICKY
+        }
     }
 
     override fun onBind(intent: Intent): IBinder? {
@@ -100,25 +158,64 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
     }
 
     private fun createNotificationChannel() {
-        println("createNotificationChannel")
+        println("Creating notification channel")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val serviceChannel = NotificationChannel(CHANNEL_ID, "Foreground Service Channel",
-                    NotificationManager.IMPORTANCE_DEFAULT)
-            val manager = getSystemService(NotificationManager::class.java)
-            manager!!.createNotificationChannel(serviceChannel)
+            try {
+                val serviceChannel = NotificationChannel(
+                    CHANNEL_ID, 
+                    "Foreground Service Channel",
+                    NotificationManager.IMPORTANCE_LOW
+                )
+                
+                // Configure the notification channel
+                serviceChannel.description = "Channel for foreground service notifications"
+                serviceChannel.enableLights(false)
+                serviceChannel.enableVibration(false)
+                serviceChannel.setShowBadge(false)
+                
+                val manager = getSystemService(NotificationManager::class.java)
+                if (manager == null) {
+                    println("ERROR: Could not get NotificationManager service")
+                    return
+                }
+                
+                manager.createNotificationChannel(serviceChannel)
+                println("Notification channel created successfully")
+            } catch (e: Exception) {
+                println("ERROR: Failed to create notification channel: ${e.message}")
+                e.printStackTrace()
+            }
+        } else {
+            println("No need to create notification channel for Android < O")
         }
     }
 
     override fun getTaskConfig(intent: Intent): HeadlessJsTaskConfig? {
-        return intent.extras?.let {
-            HeadlessJsTaskConfig(
-                    intent.extras?.getString("headlessTaskName")!!,
-                    Arguments.fromBundle(it),
-                    0, // timeout for the task
-                    true // optional: defines whether or not the task is allowed in foreground.
-                    // Default is false
+        try {
+            val extras = intent.extras
+            if (extras == null) {
+                println("ERROR: No extras found in intent for headless task")
+                return null
+            }
+
+            val headlessTaskName = extras.getString("headlessTaskName")
+            if (headlessTaskName == null || headlessTaskName.isEmpty()) {
+                println("ERROR: headlessTaskName is null or empty")
+                return null
+            }
+
+            println("Creating HeadlessJsTaskConfig with task name: $headlessTaskName")
+            return HeadlessJsTaskConfig(
+                headlessTaskName,
+                Arguments.fromBundle(extras),
+                0, // timeout for the task (0 = no timeout)
+                true // allows task to run in foreground
             )
+        } catch (e: Exception) {
+            println("ERROR: Failed to create HeadlessJsTaskConfig: ${e.message}")
+            e.printStackTrace()
+            return null
         }
     }
 }

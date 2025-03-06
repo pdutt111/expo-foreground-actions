@@ -1,10 +1,17 @@
-<manifest>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="expo.modules.foregroundactions">
+    <!-- Permissions that will be added to the host app's manifest -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    
+    <!-- For Android 10+ (API 29+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    
+    <application>
+        <!-- Service that will be merged into the host app's manifest -->
+        <service 
+            android:name="expo.modules.foregroundactions.ExpoForegroundActionsService" 
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+    </application>
 </manifest>
-<!--<manifest xmlns:android="http://schemas.android.com/apk/res/android">-->
-<!--<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>-->
-<!--<uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>-->
-<!--<uses-permission android:name="android.permission.WAKE_LOCK"/>-->
-<!--<application>-->
-<!--    <service android:name=".ExpoForegroundActionsService"/>-->
-<!--</application>-->
-<!--</manifest>-->
