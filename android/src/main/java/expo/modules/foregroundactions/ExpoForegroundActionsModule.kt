@@ -246,7 +246,8 @@ class ExpoForegroundActionsModule : Module() {
     private fun requestNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             try {
-                val activity = context.currentActivity
+                // In Expo modules, we need to get the current activity from the appContext
+                val activity = appContext.activityProvider?.currentActivity
                 Log.d(TAG, "Attempting to request POST_NOTIFICATIONS permission")
                 
                 if (activity != null) {
@@ -267,7 +268,7 @@ class ExpoForegroundActionsModule : Module() {
                     Log.d(TAG, "Permission request initiated with code: $PERMISSION_REQUEST_CODE")
                 } else {
                     Log.e(TAG, "Cannot request notification permission: activity is null")
-                    Log.d(TAG, "Current ReactContext state: ${context.javaClass.simpleName}, hasCurrentActivity: ${context.hasCurrentActivity()}")
+                    Log.d(TAG, "Current ReactContext state: ${context.javaClass.simpleName}")
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error requesting notification permission: ${e.javaClass.simpleName} - ${e.message}")
