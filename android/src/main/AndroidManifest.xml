@@ -5,13 +5,13 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     
     <!-- For Android 10+ (API 29+) -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     
     <application>
         <!-- Service that will be merged into the host app's manifest -->
         <service 
             android:name="expo.modules.foregroundactions.ExpoForegroundActionsService" 
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="health" />
     </application>
 </manifest>
