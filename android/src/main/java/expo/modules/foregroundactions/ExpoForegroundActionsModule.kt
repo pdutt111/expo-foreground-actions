@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.os.Build
+import android.util.Log
 import expo.modules.kotlin.Promise
 import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.exception.toCodedException
@@ -17,6 +18,10 @@ import expo.modules.kotlin.modules.ModuleDefinition
 const val ON_EXPIRATION_EVENT = "onExpirationEvent"
 
 class ExpoForegroundActionsModule : Module() {
+    companion object {
+        private const val TAG = "ExpoForegroundAction"
+    }
+    
     private val intentMap: MutableMap<Int, Intent> = mutableMapOf()
     private var currentReferenceId: Int = 0
 
@@ -59,7 +64,8 @@ class ExpoForegroundActionsModule : Module() {
                 promise.resolve(currentReferenceId)
 
             } catch (e: Exception) {
-                println(e.message);
+                Log.e(TAG, "Error starting foreground action: ${e.message}")
+                e.printStackTrace()
 
                 // Handle other exceptions
                 promise.reject(e.toCodedException())
@@ -68,18 +74,19 @@ class ExpoForegroundActionsModule : Module() {
 
         AsyncFunction("stopForegroundAction") { identifier: Int, promise: Promise ->
             try {
-                println(identifier);
-                println(intentMap);
+                Log.d(TAG, "Stopping foreground action with ID: $identifier")
+                Log.d(TAG, "Current intent map: $intentMap")
                 val intent = intentMap[identifier]
                 if (intent !== null) {
                     context.stopService(intent)
                     intentMap.remove(identifier)
                 } else {
-                    println("Background task with identifier $identifier does not exist or has already been ended");
+                    Log.w(TAG, "Background task with identifier $identifier does not exist or has already been ended")
 
                 }
             } catch (e: Exception) {
-                println(e.message);
+                Log.e(TAG, "Error stopping foreground action: ${e.message}")
+                e.printStackTrace()
                 // Handle other exceptions
                 promise.reject(e.toCodedException())
             }
@@ -104,7 +111,8 @@ class ExpoForegroundActionsModule : Module() {
                 notificationManager.notify(identifier, notification)
                 promise.resolve(null)
             } catch (e: Exception) {
-                println(e.message);
+                Log.e(TAG, "Error updating foreground action: ${e.message}")
+                e.printStackTrace()
                 // Handle other exceptions
                 promise.reject(e.toCodedException())
             }
@@ -113,7 +121,7 @@ class ExpoForegroundActionsModule : Module() {
         AsyncFunction("forceStopAllForegroundActions") { promise: Promise ->
             try {
                 if (intentMap.isEmpty()) {
-                    println("No intents to stop.")
+                    Log.d(TAG, "No intents to stop.")
                 } else {
                     for ((_, intent) in intentMap) {
                         context.stopService(intent)
@@ -122,7 +130,8 @@ class ExpoForegroundActionsModule : Module() {
                 }
                 promise.resolve(null)
             } catch (e: Exception) {
-                println(e.message)
+                Log.e(TAG, "Error stopping all foreground actions: ${e.message}")
+                e.printStackTrace()
                 // Handle other exceptions
                 promise.reject(e.toCodedException())
             }

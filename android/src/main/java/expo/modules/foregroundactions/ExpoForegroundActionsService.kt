@@ -11,6 +11,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.facebook.react.HeadlessJsTaskService
 import com.facebook.react.bridge.Arguments
@@ -19,6 +20,7 @@ import com.facebook.react.jstasks.HeadlessJsTaskConfig
 
 class ExpoForegroundActionsService : HeadlessJsTaskService() {
     companion object {
+        private const val TAG = "ExpoForegroundAction"
         private const val CHANNEL_ID = "ExpoForegroundActionChannel"
         fun buildNotification(
                 context: Context,
@@ -57,7 +59,7 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
         try {
             val extras: Bundle? = intent?.extras
             if (extras == null) {
-                println("ERROR: Extras are null, cannot start foreground service")
+                Log.e(TAG, "ERROR: Extras are null, cannot start foreground service")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -65,21 +67,21 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
             // Safely extract all required values with error handling
             val notificationTitle = extras.getString("notificationTitle")
             if (notificationTitle == null) {
-                println("ERROR: notificationTitle is null")
+                Log.e(TAG, "ERROR: notificationTitle is null")
                 stopSelf()
                 return START_NOT_STICKY
             }
 
             val notificationDesc = extras.getString("notificationDesc")
             if (notificationDesc == null) {
-                println("ERROR: notificationDesc is null")
+                Log.e(TAG, "ERROR: notificationDesc is null")
                 stopSelf()
                 return START_NOT_STICKY
             }
 
             val notificationColorStr = extras.getString("notificationColor")
             if (notificationColorStr == null) {
-                println("ERROR: notificationColor is null")
+                Log.e(TAG, "ERROR: notificationColor is null")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -88,14 +90,14 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
             try {
                 notificationColor = Color.parseColor(notificationColorStr)
             } catch (e: Exception) {
-                println("ERROR: Failed to parse color: ${e.message}")
+                Log.e(TAG, "ERROR: Failed to parse color: ${e.message}")
                 stopSelf()
                 return START_NOT_STICKY
             }
 
             val notificationIconInt = extras.getInt("notificationIconInt", 0)
             if (notificationIconInt == 0) {
-                println("WARNING: notificationIconInt is 0, this might cause issues")
+                Log.w(TAG, "WARNING: notificationIconInt is 0, this might cause issues")
             }
 
             val notificationProgress = extras.getInt("notificationProgress", 0)
@@ -105,12 +107,12 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
             
             val linkingURI = extras.getString("linkingURI") ?: ""
 
-            println("Service starting with notificationId: $notificationId")
-            println("notificationIconInt: $notificationIconInt")
+            Log.d(TAG, "Service starting with notificationId: $notificationId")
+            Log.d(TAG, "notificationIconInt: $notificationIconInt")
             
             // Create notification channel first
             createNotificationChannel()
-            println("Notification channel created")
+            Log.d(TAG, "Notification channel created")
 
             // Build the notification
             val notification = try {
@@ -126,19 +128,19 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
                     linkingURI
                 )
             } catch (e: Exception) {
-                println("ERROR: Failed to build notification: ${e.message}")
+                Log.e(TAG, "ERROR: Failed to build notification: ${e.message}")
                 e.printStackTrace()
                 stopSelf()
                 return START_NOT_STICKY
             }
             
-            println("Starting foreground service with ID: $notificationId")
+            Log.d(TAG, "Starting foreground service with ID: $notificationId")
             
             try {
                 startForeground(notificationId, notification)
-                println("Foreground service started successfully")
+                Log.d(TAG, "Foreground service started successfully")
             } catch (e: Exception) {
-                println("ERROR: Failed to start foreground service: ${e.message}")
+                Log.e(TAG, "ERROR: Failed to start foreground service: ${e.message}")
                 e.printStackTrace()
                 stopSelf()
                 return START_NOT_STICKY
@@ -146,7 +148,7 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
             
             return START_STICKY
         } catch (e: Exception) {
-            println("FATAL ERROR in onStartCommand: ${e.message}")
+            Log.e(TAG, "FATAL ERROR in onStartCommand: ${e.message}")
             e.printStackTrace()
             stopSelf()
             return START_NOT_STICKY
@@ -158,7 +160,7 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
     }
 
     private fun createNotificationChannel() {
-        println("Creating notification channel")
+        Log.d(TAG, "Creating notification channel")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
@@ -176,18 +178,18 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
                 
                 val manager = getSystemService(NotificationManager::class.java)
                 if (manager == null) {
-                    println("ERROR: Could not get NotificationManager service")
+                    Log.e(TAG, "ERROR: Could not get NotificationManager service")
                     return
                 }
                 
                 manager.createNotificationChannel(serviceChannel)
-                println("Notification channel created successfully")
+                Log.d(TAG, "Notification channel created successfully")
             } catch (e: Exception) {
-                println("ERROR: Failed to create notification channel: ${e.message}")
+                Log.e(TAG, "ERROR: Failed to create notification channel: ${e.message}")
                 e.printStackTrace()
             }
         } else {
-            println("No need to create notification channel for Android < O")
+            Log.d(TAG, "No need to create notification channel for Android < O")
         }
     }
 
@@ -195,17 +197,17 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
         try {
             val extras = intent.extras
             if (extras == null) {
-                println("ERROR: No extras found in intent for headless task")
+                Log.e(TAG, "ERROR: No extras found in intent for headless task")
                 return null
             }
 
             val headlessTaskName = extras.getString("headlessTaskName")
             if (headlessTaskName == null || headlessTaskName.isEmpty()) {
-                println("ERROR: headlessTaskName is null or empty")
+                Log.e(TAG, "ERROR: headlessTaskName is null or empty")
                 return null
             }
 
-            println("Creating HeadlessJsTaskConfig with task name: $headlessTaskName")
+            Log.d(TAG, "Creating HeadlessJsTaskConfig with task name: $headlessTaskName")
             return HeadlessJsTaskConfig(
                 headlessTaskName,
                 Arguments.fromBundle(extras),
@@ -213,7 +215,7 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
                 true // allows task to run in foreground
             )
         } catch (e: Exception) {
-            println("ERROR: Failed to create HeadlessJsTaskConfig: ${e.message}")
+            Log.e(TAG, "ERROR: Failed to create HeadlessJsTaskConfig: ${e.message}")
             e.printStackTrace()
             return null
         }
