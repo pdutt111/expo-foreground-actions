@@ -137,7 +137,14 @@ class ExpoForegroundActionsService : HeadlessJsTaskService() {
             Log.d(TAG, "Starting foreground service with ID: $notificationId")
             
             try {
-                startForeground(notificationId, notification)
+                // For Android 14 (API 34) and above, we need to specify the foreground service type
+                if (Build.VERSION.SDK_INT >= 34) { // Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                    val foregroundServiceType = extras.getInt("foregroundServiceType", android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    Log.d(TAG, "Starting foreground service with type: $foregroundServiceType for Android 14+")
+                    startForeground(notificationId, notification, foregroundServiceType)
+                } else {
+                    startForeground(notificationId, notification)
+                }
                 Log.d(TAG, "Foreground service started successfully")
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR: Failed to start foreground service: ${e.message}")

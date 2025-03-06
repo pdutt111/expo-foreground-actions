@@ -56,9 +56,17 @@ class ExpoForegroundActionsModule : Module() {
 
                 intentMap[currentReferenceId] = intent
                 intent.putExtra("notificationId", currentReferenceId)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                
+                // For Android 14 (API 34) and above, we need to specify the foreground service type
+                if (Build.VERSION.SDK_INT >= 34) { // Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                    intent.putExtra("foregroundServiceType", android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                    Log.d(TAG, "Starting foreground service with explicit type DATA_SYNC for Android 14+")
+                    context.startForegroundService(intent)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    Log.d(TAG, "Starting foreground service for Android 8-13")
                     context.startForegroundService(intent)
                 } else {
+                    Log.d(TAG, "Starting regular service for Android < 8")
                     context.startService(intent)
                 }
                 promise.resolve(currentReferenceId)
