@@ -76,12 +76,12 @@ const startForegroundAction = async (options?: AndroidSettings): Promise<number>
 // Get the native constant value.
 export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise<void>, androidSettings: AndroidSettings, settings: Settings = { runInJS: false }): Promise<void> => {
   if (!androidSettings) {
+    debug("Error: androidSettings is null or undefined");
     throw new Error("Foreground action options cannot be null");
   }
-
-  if (AppState.currentState === "background") {
-    throw new NotForegroundedError("Foreground actions can only be run in the foreground");
-  }
+  
+  debug(`Starting foreground action with current AppState: ${AppState.currentState}`);
+  // We're removing the background check to allow the action to run in background
 
   if (Platform.OS === "android" && platformApiLevel && platformApiLevel < 26) {
     settings.runInJS = true;
@@ -94,11 +94,7 @@ export const runForegroundedAction = async (act: (api: ForegroundApi) => Promise
     debug(`Action called with identifier: ${identifier}`);
     debug(`Current AppState: ${AppState.currentState}`);
     
-    if (AppState.currentState === "background") {
-      debug("Error: App is in background state, cannot run foreground action");
-      throw new NotForegroundedError("Foreground actions can only be run in the foreground");
-    }
-    
+    // Allow action to run in background
     debug(`Executing action with headlessTaskName: ${headlessTaskName}`);
     try {
       await act({
@@ -171,12 +167,24 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
       const { notificationId } = taskdata;
       debug(`Headless task started with notificationId: ${notificationId}`);
       
-      /*Then we start the actuall foreground action, we all do this in the headless task, without touching UI, we can still update UI be using something like Realm for example*/
+      // Set up AppState listener to track state changes during execution
+      let currentAppState = AppState.currentState;
+      debug(`Initial AppState in headless task: ${currentAppState}`);
+      
+      const handleAppStateChange = (nextAppState: string) => {
+        debug(`AppState changed from ${currentAppState} to ${nextAppState} during headless task`);
+        currentAppState = nextAppState;
+      };
+      
+      // Add the AppState listener
+      const subscription = AppState.addEventListener('change', handleAppStateChange);
+      
+      /*Then we start the actual foreground action, we do this in the headless task, without touching UI*/
       try {
         debug(`Calling onIdentifier event handler with ID: ${notificationId}`);
         settings?.events?.onIdentifier?.(notificationId);
         
-        debug(`Executing action with ID: ${notificationId}`);
+        debug(`Executing action with ID: ${notificationId} (AppState: ${currentAppState})`);
         await action(notificationId);
         
         debug(`Action completed, stopping foreground service with ID: ${notificationId}`);
@@ -189,6 +197,9 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
         debug(`Ensuring foreground service is stopped after error`);
         await stopForegroundAction(notificationId);
         throw e;
+      } finally {
+        // Clean up the AppState listener
+        subscription.remove();
       }
     });
     
