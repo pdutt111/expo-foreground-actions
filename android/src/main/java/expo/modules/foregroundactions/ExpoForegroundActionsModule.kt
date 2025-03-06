@@ -48,39 +48,80 @@ class ExpoForegroundActionsModule : Module() {
             try {
                 // Check notification permission for Android 13+
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    if (!hasNotificationPermission()) {
+                    val hasPermission = hasNotificationPermission()
+                    Log.d(TAG, "Android 13+ detected. Notification permission status: $hasPermission")
+                    if (!hasPermission) {
                         Log.d(TAG, "Notification permission not granted, requesting...")
                         requestNotificationPermission()
+                    } else {
+                        Log.d(TAG, "Notification permission already granted")
                     }
+                } else {
+                    Log.d(TAG, "Running on Android ${Build.VERSION.SDK_INT}, notification permission automatically granted")
                 }
+                
+                Log.d(TAG, "Creating intent for ExpoForegroundActionsService")
+                Log.d(TAG, "Notification details - Title: ${options.notificationTitle}, Desc: ${options.notificationDesc}")
+                Log.d(TAG, "Notification color: ${options.notificationColor}")
                 
                 val intent = Intent(context, ExpoForegroundActionsService::class.java)
                 intent.putExtra("headlessTaskName", options.headlessTaskName)
                 intent.putExtra("notificationTitle", options.notificationTitle)
                 intent.putExtra("notificationDesc", options.notificationDesc)
                 intent.putExtra("notificationColor", options.notificationColor)
+                
+                // Get notification icon resource ID
                 val notificationIconInt: Int = context.resources.getIdentifier(options.notificationIconName, options.notificationIconType, context.packageName)
+                Log.d(TAG, "Notification icon details - Name: ${options.notificationIconName}, Type: ${options.notificationIconType}")
+                Log.d(TAG, "Resolved notification icon resource ID: $notificationIconInt")
+                if (notificationIconInt <= 0) {
+                    Log.w(TAG, "WARNING: Could not resolve notification icon resource. This may cause notification display issues.")
+                }
                 intent.putExtra("notificationIconInt", notificationIconInt)
                 intent.putExtra("notificationProgress", options.notificationProgress)
                 intent.putExtra("notificationMaxProgress", options.notificationMaxProgress)
                 intent.putExtra("notificationIndeterminate", options.notificationIndeterminate)
                 intent.putExtra("linkingURI", options.linkingURI)
+                Log.d(TAG, "Notification progress: ${options.notificationProgress}/${options.notificationMaxProgress}, Indeterminate: ${options.notificationIndeterminate}")
+                Log.d(TAG, "Linking URI: ${options.linkingURI}")
+                
                 currentReferenceId++
+                Log.d(TAG, "Generated new notification ID: $currentReferenceId")
 
                 intentMap[currentReferenceId] = intent
                 intent.putExtra("notificationId", currentReferenceId)
                 
                 // For Android 14 (API 34) and above, we need to specify the foreground service type
-                if (Build.VERSION.SDK_INT >= 34) { // Build.VERSION_CODES.UPSIDE_DOWN_CAKE
-                    intent.putExtra("foregroundServiceType", android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH)
-                    Log.d(TAG, "Starting foreground service with explicit type HEALTH for Android 14+")
-                    context.startForegroundService(intent)
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    Log.d(TAG, "Starting foreground service for Android 8-13")
-                    context.startForegroundService(intent)
-                } else {
-                    Log.d(TAG, "Starting regular service for Android < 8")
-                    context.startService(intent)
+                try {
+                    if (Build.VERSION.SDK_INT >= 34) { // Build.VERSION_CODES.UPSIDE_DOWN_CAKE
+                        val serviceType = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH
+                        intent.putExtra("foregroundServiceType", serviceType)
+                        Log.d(TAG, "Starting foreground service with explicit type HEALTH ($serviceType) for Android 14+")
+                        Log.d(TAG, "Checking manifest for required permissions...")
+                        
+                        // Check if the app has the required foreground service type permission
+                        val hasHealthPermission = context.packageManager.checkPermission(
+                            android.Manifest.permission.FOREGROUND_SERVICE_HEALTH,
+                            context.packageName
+                        ) == PackageManager.PERMISSION_GRANTED
+                        
+                        Log.d(TAG, "FOREGROUND_SERVICE_HEALTH permission status: $hasHealthPermission")
+                        
+                        context.startForegroundService(intent)
+                        Log.d(TAG, "Successfully called startForegroundService for Android 14+")
+                    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        Log.d(TAG, "Starting foreground service for Android 8-13")
+                        context.startForegroundService(intent)
+                        Log.d(TAG, "Successfully called startForegroundService for Android 8-13")
+                    } else {
+                        Log.d(TAG, "Starting regular service for Android < 8")
+                        context.startService(intent)
+                        Log.d(TAG, "Successfully called startService for Android < 8")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to start service: ${e.javaClass.simpleName} - ${e.message}")
+                    e.printStackTrace()
+                    throw e
                 }
                 promise.resolve(currentReferenceId)
 
@@ -116,20 +157,35 @@ class ExpoForegroundActionsModule : Module() {
 
         AsyncFunction("updateForegroundedAction") { identifier: Int, options: ExpoForegroundOptions, promise: Promise ->
             try {
+                Log.d(TAG, "Updating notification for ID: $identifier")
+                Log.d(TAG, "Update details - Title: ${options.notificationTitle}, Desc: ${options.notificationDesc}")
+                
                 val notificationIconInt: Int = context.resources.getIdentifier(options.notificationIconName, options.notificationIconType, context.packageName)
-                val notification: Notification = ExpoForegroundActionsService.buildNotification(
-                        context,
-                        options.notificationTitle,
-                        options.notificationDesc,
-                        Color.parseColor(options.notificationColor),
-                        notificationIconInt,
-                        options.notificationProgress,
-                        options.notificationMaxProgress,
-                        options.notificationIndeterminate,
-                        options.linkingURI,
-                );
-                val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                notificationManager.notify(identifier, notification)
+                Log.d(TAG, "Update icon details - Name: ${options.notificationIconName}, Type: ${options.notificationIconType}")
+                Log.d(TAG, "Resolved update icon resource ID: $notificationIconInt")
+                
+                try {
+                    val notification: Notification = ExpoForegroundActionsService.buildNotification(
+                            context,
+                            options.notificationTitle,
+                            options.notificationDesc,
+                            Color.parseColor(options.notificationColor),
+                            notificationIconInt,
+                            options.notificationProgress,
+                            options.notificationMaxProgress,
+                            options.notificationIndeterminate,
+                            options.linkingURI,
+                    )
+                    Log.d(TAG, "Notification built successfully")
+                    
+                    val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    notificationManager.notify(identifier, notification)
+                    Log.d(TAG, "Notification updated successfully for ID: $identifier")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error building or updating notification: ${e.javaClass.simpleName} - ${e.message}")
+                    e.printStackTrace()
+                    throw e
+                }
                 promise.resolve(null)
             } catch (e: Exception) {
                 Log.e(TAG, "Error updating foreground action: ${e.message}")
@@ -175,11 +231,15 @@ class ExpoForegroundActionsModule : Module() {
         
     private fun hasNotificationPermission(): Boolean {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return ContextCompat.checkSelfPermission(
+            val permissionStatus = ContextCompat.checkSelfPermission(
                 context,
                 android.Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
+            )
+            val isGranted = permissionStatus == PackageManager.PERMISSION_GRANTED
+            Log.d(TAG, "POST_NOTIFICATIONS permission check - Status code: $permissionStatus, Granted: $isGranted")
+            return isGranted
         }
+        Log.d(TAG, "POST_NOTIFICATIONS permission check not needed for Android < 13")
         return true
     }
     
@@ -187,19 +247,34 @@ class ExpoForegroundActionsModule : Module() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             try {
                 val activity = context.currentActivity
+                Log.d(TAG, "Attempting to request POST_NOTIFICATIONS permission")
+                
                 if (activity != null) {
+                    Log.d(TAG, "Current activity found: ${activity.javaClass.simpleName}")
+                    
+                    // Check if we should show rationale
+                    val shouldShowRationale = ActivityCompat.shouldShowRequestPermissionRationale(
+                        activity, 
+                        android.Manifest.permission.POST_NOTIFICATIONS
+                    )
+                    Log.d(TAG, "Should show permission rationale: $shouldShowRationale")
+                    
                     ActivityCompat.requestPermissions(
                         activity,
                         arrayOf(android.Manifest.permission.POST_NOTIFICATIONS),
                         PERMISSION_REQUEST_CODE
                     )
+                    Log.d(TAG, "Permission request initiated with code: $PERMISSION_REQUEST_CODE")
                 } else {
                     Log.e(TAG, "Cannot request notification permission: activity is null")
+                    Log.d(TAG, "Current ReactContext state: ${context.javaClass.simpleName}, hasCurrentActivity: ${context.hasCurrentActivity()}")
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Error requesting notification permission: ${e.message}")
+                Log.e(TAG, "Error requesting notification permission: ${e.javaClass.simpleName} - ${e.message}")
                 e.printStackTrace()
             }
+        } else {
+            Log.d(TAG, "No need to request POST_NOTIFICATIONS permission for Android < 13")
         }
     }
 }
