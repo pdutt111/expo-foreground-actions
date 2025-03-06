@@ -171,13 +171,14 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
       let currentAppState = AppState.currentState;
       debug(`Initial AppState in headless task: ${currentAppState}`);
       
-      const handleAppStateChange = (nextAppState: string) => {
+      const handleAppStateChange = (nextAppState: any) => {
         debug(`AppState changed from ${currentAppState} to ${nextAppState} during headless task`);
         currentAppState = nextAppState;
       };
       
       // Add the AppState listener
-      const subscription = AppState.addEventListener('change', handleAppStateChange);
+      // Different React Native versions handle event listeners differently
+      AppState.addEventListener('change', handleAppStateChange);
       
       /*Then we start the actual foreground action, we do this in the headless task, without touching UI*/
       try {
@@ -199,7 +200,14 @@ const runAndroid = async (action: (identifier: number) => Promise<void>, options
         throw e;
       } finally {
         // Clean up the AppState listener
-        subscription.remove();
+        // In newer versions of React Native, we would use subscription.remove()
+        // In older versions, we use removeEventListener
+        try {
+          // For React Native >= 0.65
+          AppState.removeEventListener('change', handleAppStateChange);
+        } catch (error) {
+          debug(`Error removing AppState listener: ${error}`);
+        }
       }
     });
     
